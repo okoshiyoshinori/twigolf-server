@@ -5,8 +5,8 @@ import (
 )
 
 type conf struct {
-  Dbserver *dbConfig
-  Apserver *apConfig
+  Dbserver dbConfig `toml:"dbserver"`
+  Apserver apConfig `toml:"apserver"`
 }
 
 type dbConfig struct {
@@ -22,14 +22,16 @@ type dbConfig struct {
 type apConfig struct {
   NumPerPage int `toml:"numperpage"`
   Origin string `toml:"origin"`
+  Port string `toml:"port"`
   CookieKey string `toml:"cookie_key"`
+  Salt string `toml:"salt"`
 }
 
 var systemConfig *conf = readConfig() 
 
 func readConfig() *conf {
   config := conf{}
-  _,err := toml.Decode("Config.toml",&config)
+  _,err := toml.DecodeFile("Config.toml",&config)
   if err != nil {
     panic(err.Error())
   }

@@ -1,10 +1,11 @@
 package router
 
 import (
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
-	"github.com/gin-contrib/sessions"
 	"github.com/okoshiyoshinori/twigolf-server/config"
+	"github.com/okoshiyoshinori/twigolf-server/controller"
 )
 
 func GetRouter() *gin.Engine {
@@ -21,11 +22,20 @@ func GetRouter() *gin.Engine {
   return r
 }
 
-func privateRouter(api *gin.RouterGroup) {
+func privateRouter(group *gin.RouterGroup) {
 }
 
-func publicRouter(api *gin.RouterGroup) {
-
+func publicRouter(group *gin.RouterGroup) {
+  group.GET("/prefs",controller.GetPref)
+  group.GET("/user/:uid",controller.GetUser)
+  group.GET("/competition",controller.GetCompetition)
+  group.GET("/competition/:id",controller.GetCompetitonDetail)
+  group.GET("/comments/:cid",controller.GetComment)
+  group.GET("/participants/:cid",controller.GetPaticipants)
+  group.GET("/search",controller.SearchCompetition)
+  group.GET("/clubs",controller.GetClubs)
+  //private
+  group.POST("/competition",controller.PostCompetiton)
 }
 
 func CorsMiddleware() gin.HandlerFunc {
