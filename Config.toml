@@ -9,7 +9,7 @@ parsetime = "parseTime=true&loc=Asia%2FTokyo"
 
 [apserver]
 numperpage = 10
-origin = "*"
+origin = "http://127.0.0.1:3000"
 port = ":9001"
 cookie_key = "twigolucookie"
 salt = "nex777ad"

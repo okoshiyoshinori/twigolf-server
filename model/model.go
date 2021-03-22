@@ -15,6 +15,12 @@ const (
   OPEN = 1
   CLOSE = 2
 )
+//participant
+const (
+  PARTICIPANT = 1
+  CONCERN = 2
+  DECLINE = 3
+)
 
 
 //DB User Table
@@ -45,8 +51,8 @@ type Competition struct {
   PlaceText *string `json:"place_text"`
   EventDay *time.Time `json:"event_day"`
   EventDeadline *time.Time `json:"event_deadline"`
+  Keyword string `json:"keyword"`
   User *User `json:"user"`
-  Keyword []*Keyword `json:"keywords"`
   Club *Club `json:"club"`
   UpdateAt time.Time `json:"update_at"`
 }
@@ -61,27 +67,14 @@ type Participant struct {
   UpdateAt time.Time `json:"update_at"`
 }
 
-//DB kayword table
-type Keyword struct {
-  ID uint `json:"id" gorm:"primaryKey"`
-  CompetitionID uint `json:"competition_id"` 
-  Word string `json:"word"`
-  UpdateAt time.Time `json:"update_at"`
-}
 //DB Comment table
 type Comment struct {
   ID uint `json:"id" gorm:"primaryKey"`
   CompetitionID uint `json:"competition_id"`
-  UserID int `json:"user_id"`
+  UserID uint `json:"user_id"`
   Message string `json:"message"`
   User *User `json:"user"`
   UpdateAt time.Time `json:"update_at"`
-}
-
-//DB Prefecture table
-type Prefecture struct {
-  ID uint `json:"id" gorm:"primaryKey"`
-  Name string `json:"name"`
 }
 
 //DB Club table
@@ -115,18 +108,20 @@ type CompetitionForm struct {
   PlaceText *string `json:"place_text"`
   EventDay *time.Time `json:"event_day"`
   EventDeadline *time.Time `json:"event_deadline"`
-  KeyWord  KeywordForm `json:"keywords"`
+  Keyword string `json:"keyword"`
 }
 
-//form comment
+//form participants
+type ParticipantForm struct {
+  ID uint `json:"id"`
+  CompetitionID uint `json:"competition_id" binding:"required"`
+  UserID uint `json:"user_id" binding:"required"`
+  Status int `json:"status" binding:"required"`
+}
+
 type CommentForm struct {
-  CompetitionID string `json:"competition_id" binding:"required"`
-  UserID string `json:"user_id" binding:"required"`
+  ID uint `json:"id"`
+  CompetitionID uint `json:"competition_id" binding:"required"`
+  UserID uint `json:"user_id" binding:"required"`
   Message string `json:"message" binding:"required"`
 }
-
-//form keyword
-type KeywordForm struct {
-  Words []string `json:"words"`
-}
-
