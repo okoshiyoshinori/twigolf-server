@@ -18,6 +18,7 @@ func GetRouter() *gin.Engine {
     AllowOrigins: []string{
       "http://localhost:3000",
       "http://127.0.0.1:3000",
+      "http://192.168.61.6:3000",
     },
     AllowMethods: []string{
         "POST",
@@ -48,6 +49,16 @@ func GetRouter() *gin.Engine {
 }
 
 func privateRouter(group *gin.RouterGroup) {
+  group.POST("/competition",controller.PostCompetiton)
+  group.POST("/participant",controller.PostParticipant)
+  group.POST("/comments",controller.PostComment)
+  group.POST("/user_real_name",controller.PostUserRealName)
+  group.POST("/bundle_participant",controller.BundleParticipant)
+  group.POST("/combination",controller.PostCombination)
+  group.DELETE("/logout",controller.Logout)
+  group.DELETE("/competition/:id",controller.DeleteCompetiton)
+  group.GET("/combination/:cid",controller.GetCombination)
+  group.GET("/participants_with_name/:cid",controller.GetPaticipantsWithRealName)
 }
 
 func publicRouter(group *gin.RouterGroup) {
@@ -60,15 +71,11 @@ func publicRouter(group *gin.RouterGroup) {
   group.GET("/clubs",controller.GetClubs)
   group.GET("/user_competitions/:snsid",controller.GetUserCompetitions)
   group.GET("/session",controller.GetSession)
-  group.DELETE("/logout",controller.Logout)
-  //private
-  group.POST("/competition",controller.PostCompetiton)
-  group.POST("/participant",controller.PostParticipant)
-  group.POST("/comments",controller.PostComment)
 }
 /*
 func CorsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+    oo
 		c.Writer.Header().Set("Access-Control-Allow-Origin", config.GetConfig().Apserver.Origin)
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
