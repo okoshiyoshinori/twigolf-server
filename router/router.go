@@ -18,7 +18,7 @@ func GetRouter() *gin.Engine {
     AllowOrigins: []string{
       "http://localhost:3000",
       "http://127.0.0.1:3000",
-      "http://192.168.61.6:3000",
+      "http://192.168.61.7:3000",
     },
     AllowMethods: []string{
         "POST",
@@ -52,16 +52,17 @@ func privateRouter(group *gin.RouterGroup) {
   group.POST("/competition",controller.PostCompetiton)
   group.POST("/participant",controller.PostParticipant)
   group.POST("/comments",controller.PostComment)
-  group.POST("/user_real_name",controller.PostUserRealName)
+  group.POST("/user_basic_info",controller.PostUserBasicInfo)
   group.POST("/bundle_participant",controller.BundleParticipant)
-  group.POST("/combination",controller.PostCombination)
+  group.POST("/combination/:cid",controller.PostCombination)
   group.DELETE("/logout",controller.Logout)
   group.DELETE("/competition/:id",controller.DeleteCompetiton)
-  group.GET("/combination/:cid",controller.GetCombination)
   group.GET("/participants_with_name/:cid",controller.GetPaticipantsWithRealName)
+  group.GET("/get_combination_excel/:cid",controller.GetCombinationExcel)
 }
 
 func publicRouter(group *gin.RouterGroup) {
+  group.GET("/combination/:cid",controller.GetCombination)
   group.GET("/user/:snsid",controller.GetUser)
   group.GET("/competition",controller.GetCompetition)
   group.GET("/competition/:id",controller.GetCompetitonDetail)

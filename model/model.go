@@ -31,6 +31,8 @@ type User struct {
   SnsId string `json:"sns_id"`
   RealName *string `json:"real_name"`
   RealNameKana *string `json:"real_name_kana"`
+  Sex *uint `json:"sex"`
+  Birthday *time.Time `json:"birthday"`
   ScreenName string `json:"screen_name"`
   Avatar string `json:"avatar"`
   Description string `json:"description"`
@@ -54,6 +56,7 @@ type Competition struct {
   EventDay *time.Time `json:"event_day"`
   EventDeadline *time.Time `json:"event_deadline"`
   Keyword *string `json:"keyword"`
+  CombinationOpen bool `json:"combination_open"`
   User *User `json:"user"`
   Club *Club `json:"club"`
   UpdateAt time.Time `json:"update_at"`
@@ -105,6 +108,11 @@ type Combination struct {
   DeletedAt *time.Time `json:"deleted_at"`
 }
 
+type BundleCombinationWithOpen struct {
+  CombinationOpen bool `json:"combination_open"`
+  Combinations []Combination `json:"combinations"`
+}
+
 //form combinarion 
 type CombinationForm struct {
   ID uint `json:"id" binding:"required"` 
@@ -119,6 +127,7 @@ type CombinationForm struct {
 
 //bundleCombinationForm
 type BundleCombination struct {
+  Open bool `json:"open"`
   Transaction []CombinationForm `json:"transaction" binding:"required"`
 }
 
@@ -167,8 +176,10 @@ type CommentForm struct {
   Message string `json:"message" binding:"required"`
 }
 
-type UserRealNameForm struct {
+type UserBasicInfoForm struct {
   ID uint `json:"id"`
   RealName *string `json:"real_name" binding:"required"`
   RealNameKana *string `json:"real_name_kana" binding:"required"`
+  Sex *uint `json:"sex" binding:"required"`
+  BirthDay *time.Time `json:"birthday" binding:"required"`
 }

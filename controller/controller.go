@@ -5,19 +5,59 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/360EntSecGroup-Skylar/excelize/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/gorm"
 	"github.com/okoshiyoshinori/twigolf-server/db"
+	"github.com/okoshiyoshinori/twigolf-server/excel"
 	"github.com/okoshiyoshinori/twigolf-server/logger"
 	"github.com/okoshiyoshinori/twigolf-server/model"
 	"github.com/okoshiyoshinori/twigolf-server/util"
 )
+
+//test
+var testUser uint = 1
 
 //ログアウト
 func Logout(c *gin.Context) {
   c.JSON(http.StatusOK,gin.H{"cause":"ログアウトしました"})
 }
 
+//組み合わせファイル転送
+func GetCombinationExcel(c *gin.Context) {
+  cid := c.Param("cid")
+  d := db.GetConn()
+  competition := model.Competition{}
+  participants := make([]*model.Participant,0)
+  combination := make([]*model.Combination,0)
+  if d.Where("id = ?",cid).Preload("User").Find(&competition).RecordNotFound() {
+    c.JSON(http.StatusNotFound,gin.H{"cause":"データがありません"})
+    return
+  }
+  if d.Where("competition_id = ?",cid).Where("status = ?",1).Preload("User").Find(&participants).RecordNotFound() {
+    c.JSON(http.StatusNotFound,gin.H{"cause":"データがありません"})
+    return
+  }
+  if d.Where("competition_id = ?",cid).Find(&combination).RecordNotFound() {
+    c.JSON(http.StatusNotFound,gin.H{"cause":"データがありません"})
+    return
+  }
+  //テンプレート読み込み
+  const activeSheet string = "Sheet1"
+  f,err := excelize.OpenFile("./template.xlsx")
+  if err != nil {
+    c.JSON(http.StatusInternalServerError,gin.H{"cause":"予期せぬエラーが発生しました"})
+    return
+  }
+ 
+  ex := excel.NewExcel(f,participants,&competition,combination)
+  ex.Make(activeSheet)
+  c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Disposition", "attachment; filename="+"Workbook.xlsx")
+	c.Header("Content-Transfer-Encoding", "binary")
+  _ = ex.Fd.Write(c.Writer) 
+}
 
 //クラブ情報送信
 func GetClubs(c *gin.Context) {
@@ -28,7 +68,7 @@ func GetClubs(c *gin.Context) {
     c.JSON(http.StatusInternalServerError,gin.H{"cause":"不正なデータです"})
     return
   }
-  d.Order("id asc").Where("MATCH (name,address) AGAINST (? IN NATURAL LANGUAGE MODE)",word).Find(&clubs)
+  d.Order("id asc").Where("MATCH (name,address) AGAINST (? IN BOOLEAN MODE)",word).Find(&clubs)
   if len(clubs) <= 0 {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当データがありません"})
     return
@@ -37,10 +77,10 @@ func GetClubs(c *gin.Context) {
 }
 
 func GetSession(c *gin.Context) {
-  id := 1 //sessionから取得
+  id := testUser //sessionから取得
   user := &model.User{}
   d := db.GetConn()
-  if d.Select("id,sns_id,screen_name,real_name,real_name_kana,avatar,description").Where("id = ?",id).Find(user).RecordNotFound() {
+  if d.Select("id,sns_id,screen_name,real_name,real_name_kana,sex,birthday,avatar,description").Where("id = ?",id).Find(user).RecordNotFound() {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当ユーザーは存在しません"})
     return
   }
@@ -170,7 +210,8 @@ func GetComment(c *gin.Context) {
   cid := c.Param("cid")
   d := db.GetConn()
   comments := make([]*model.Comment,0) 
-  d.Where("competition_id = ?",cid).Preload("User",func(db *gorm.DB)*gorm.DB {
+  joinq := d.Joins("left join competitions on competitions.id = comments.competition_id")
+  joinq.Where("comments.competition_id = ?",cid).Preload("User",func(db *gorm.DB)*gorm.DB {
     return db.Select([]string{"id","screen_name","sns_id","avatar","description"})
   }).Order("update_at desc").Find(&comments)
   if len(comments) <= 0 {
@@ -185,7 +226,8 @@ func GetPaticipants(c *gin.Context) {
   cid := c.Param("cid")
   d := db.GetConn()
   participants := make([]*model.Participant,0)
-  d.Where("competition_id = ?",cid).Preload("User",func(db *gorm.DB)*gorm.DB {
+  joinq := d.Joins("left join competitions on competitions.id = participants.competition_id")
+  joinq.Where("participants.competition_id = ?",cid).Preload("User",func(db *gorm.DB)*gorm.DB {
     return db.Select([]string{"id","screen_name","sns_id","avatar"})
   }).Find(&participants)
  if len(participants) <= 0 {
@@ -196,11 +238,14 @@ func GetPaticipants(c *gin.Context) {
 }
 
 func GetPaticipantsWithRealName(c *gin.Context) {
+  //test
+  uid := testUser
   cid := c.Param("cid")
   d := db.GetConn()
   participants := make([]*model.Participant,0)
-  d.Where("competition_id = ?",cid).Preload("User",func(db *gorm.DB)*gorm.DB {
-    return db.Select([]string{"id","screen_name","sns_id","avatar","real_name","real_name_kana"})
+  joinq := d.Joins("left join competitions on competitions.id = participants.competition_id")
+  joinq.Where("competitions.id = ?",cid).Where("competitions.user_id = ?",uid).Preload("User",func(db *gorm.DB)*gorm.DB {
+    return db.Select([]string{"id","screen_name","sns_id","avatar","real_name","real_name_kana,sex,birthday"})
   }).Find(&participants)
  if len(participants) <= 0 {
    c.JSON(http.StatusNotFound,gin.H{"cause":"参加者がいません"})
@@ -212,13 +257,19 @@ func GetPaticipantsWithRealName(c *gin.Context) {
 func GetCombination(c *gin.Context) {
   cid := c.Param("cid")
   d := db.GetConn()
-  combinations := make([]*model.Combination,0)
+  //compe
+  compe := model.Competition{}
+  if d.Where("id = ?",cid).Select("combination_open").Find(&compe).RecordNotFound() {
+    c.JSON(http.StatusNotFound,gin.H{"cause":"データがありません"})
+    return
+  }
+  combinations := make([]model.Combination,0)
   d.Where("competition_id = ?",cid).Order("start_time asc").Find(&combinations)
   if len(combinations) <= 0 {
     c.JSON(http.StatusNotFound,gin.H{"cause":"まだデータがありません"})
     return
   }
-  c.JSON(http.StatusOK,&combinations)
+  c.JSON(http.StatusOK,gin.H{"combination_open":compe.CombinationOpen,"payload":combinations})
 }
 
 func SearchCompetition(c *gin.Context) {
@@ -272,8 +323,8 @@ func SearchCompetition(c *gin.Context) {
   c.JSON(http.StatusOK,gin.H{"payload":&compe,"allNumber":count})
 }
 
-func PostUserRealName(c *gin.Context) {
-  form := model.UserRealNameForm{}
+func PostUserBasicInfo(c *gin.Context) {
+  form := model.UserBasicInfoForm{}
   if err:= c.Bind(&form); err != nil {
     c.JSON(http.StatusBadRequest,gin.H{"cause":"データに不備があります"})
     return
@@ -286,6 +337,8 @@ func PostUserRealName(c *gin.Context) {
   }
   user.RealName = form.RealName
   user.RealNameKana = form.RealNameKana
+  user.Sex = form.Sex
+  user.Birthday = form.BirthDay
   user.UpdateAt = time.Now()
 
   result := d.Save(&user)
@@ -299,9 +352,11 @@ func PostUserRealName(c *gin.Context) {
 
 //create competitions
 func PostCompetiton(c *gin.Context) {
+  //test
+  uid := testUser
   form := model.CompetitionForm{}
   if err := c.Bind(&form); err != nil {
-    c.JSON(http.StatusBadRequest,gin.H{"cause":err.Error()})
+    c.JSON(http.StatusBadRequest,gin.H{"cause":"データに不備があります"})
     return
   }
   compe := model.Competition {
@@ -320,11 +375,15 @@ func PostCompetiton(c *gin.Context) {
     DeletedAt: nil, 
   }
   d := db.GetConn()
-  if d.Where("id = ?",compe.ID).Find(&model.Competition{}).RecordNotFound() {
+  if d.Where("id = ?",compe.ID).Where("user_id = ?",uid).Find(&model.Competition{}).RecordNotFound() {
+    if compe.ID != 0 {
+      c.JSON(http.StatusBadRequest,gin.H{"cause":"不正なアクセスがありました"})
+      return
+    } 
     result := d.Create(&compe)
     if result.Error != nil {
       logger.Error.Println(result.Error.Error())
-      c.JSON(http.StatusInternalServerError,gin.H{"cause":result.Error.Error()})
+      c.JSON(http.StatusInternalServerError,gin.H{"cause":"予期せぬエラーが発生しました"})
       return
     }
     participants := model.Participant {
@@ -360,7 +419,7 @@ func PostParticipant(c *gin.Context) {
   d := db.GetConn()
   //チェック
   compe := model.Competition{}
-  d.Where("competition_id = ?",form.CompetitionID).Select("capacity").Find(&compe)
+  d.Where("id = ?",form.CompetitionID).Select("capacity").Find(&compe)
   limit := compe.Capacity
   var nowParticipant int
   d.Model(model.Participant{}).Where("competition_id = ?",form.CompetitionID).Where("status = ?",1).Count(&nowParticipant)
@@ -406,6 +465,8 @@ func PostParticipant(c *gin.Context) {
 
 //delete competition
 func DeleteCompetiton(c *gin.Context) {
+  //test
+  uid := testUser
   idstr := c.Param("id")
   u_id,err := strconv.ParseUint(idstr,10,32 << (^uint(0) >> 63)) 
   if err != nil {
@@ -414,8 +475,13 @@ func DeleteCompetiton(c *gin.Context) {
   }
   comp := model.Competition {
     ID:uint(u_id),
+    UserID:uid,
   }
   d := db.GetConn()
+  if d.Where("id = ?",u_id).Where("user_id = ?",uid).Find(&model.Competition{}).RecordNotFound() {
+    c.JSON(http.StatusNotFound,gin.H{"cause":"データがありません"})
+    return
+  }
   result := d.Delete(&comp)
   if result.Error != nil {
     logger.Error.Println(result.Error.Error())
@@ -463,7 +529,10 @@ func BundleParticipant(c *gin.Context) {
   //参加人数取得
   d := db.GetConn()
   compe := model.Competition{}
-  d.Where("id = ?",form.Transaction[0].CompetitionID).Select("capacity").Find(&compe)
+  if d.Where("id = ?",form.Transaction[0].CompetitionID).Select("capacity").Find(&compe).RecordNotFound() {
+    c.JSON(http.StatusBadRequest,gin.H{"cause":"データに不備があります"})
+    return
+  }
   //参加人数
   limit := compe.Capacity
   for _,v := range form.Transaction {
@@ -515,12 +584,57 @@ func BundleParticipant(c *gin.Context) {
 
 //post combination
 func PostCombination(c *gin.Context) {
-  form := model.BundleCombination{}
-  if err := c.Bind(&form); err != nil {
-    c.JSON(http.StatusBadRequest,gin.H{"cause":"データに不備がありません"})
+  //test
+  uid := testUser
+  cid := c.Param("cid")
+  d := db.GetConn()
+  //check
+  compe := model.Competition{}
+  if d.Where("id = ?",cid).Where("user_id = ?",uid).Find(&compe).RecordNotFound() {
+    c.JSON(http.StatusBadRequest,gin.H{"cause":"データに不備があります"})
     return
   }
-  d := db.GetConn()
+  form := model.BundleCombination{}
+  if err := c.Bind(&form); err != nil {
+    c.JSON(http.StatusBadRequest,gin.H{"cause":"データに不備があります"})
+    return
+  }
+  //組み合わせ公開更新
+  {
+    compe.CombinationOpen = form.Open
+    compe.UpdateAt = time.Now()
+    result := d.Save(&compe)
+    if result.Error != nil {
+      logger.Error.Println(result.Error.Error())
+      c.JSON(http.StatusInternalServerError,gin.H{"cause":"予期せぬエラーが発生しました"})
+      return
+    }
+  }
+  //削除対象検索
+  all := make([]*model.Combination,0)
+  var delete_data = make([]uint,0)
+  var flag bool
+  d.Select("id").Where("competition_id = ?",cid).Find(&all)
+  for _,val1 := range all {
+    flag = false
+    for _,val2 := range form.Transaction {
+      if val1.ID == val2.ID {
+        flag = true
+      }
+    }
+    if flag == false {
+      delete_data = append(delete_data,val1.ID)
+    }
+  }
+  //削除
+  if len(delete_data) > 0 {
+    result := d.Debug().Delete(&model.Combination{},delete_data)
+    if result.Error != nil {
+      logger.Error.Println(result.Error.Error())
+      c.JSON(http.StatusInternalServerError,gin.H{"cause":"データの削除に失敗しました"})
+      return
+    } 
+  }
   for _,val := range form.Transaction {
    if d.Where("id = ?",val.ID).Find(&model.Combination{}).RecordNotFound() {
      //新規作成
@@ -564,6 +678,6 @@ func PostCombination(c *gin.Context) {
    }
  }
  resultdata := make([]*model.Combination,0)
- d.Where("competition_id = ?",form.Transaction[0].CompetitionID).Order("start_time asc").Find(&resultdata)
- c.JSON(http.StatusOK,gin.H{"payload":resultdata,"cause":"正常に終了しました"})
+ d.Where("competition_id = ?",cid).Order("start_time asc").Find(&resultdata)
+ c.JSON(http.StatusOK,gin.H{"combination_open":compe.CombinationOpen,"payload":resultdata,"cause":"正常に終了しました"})
 }
