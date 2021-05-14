@@ -21,7 +21,7 @@ type dbConfig struct {
 
 type apConfig struct {
   NumPerPage int `toml:"numperpage"`
-  Origin string `toml:"origin"`
+  Origin []string `toml:"origin"`
   Port string `toml:"port"`
   CookieKey string `toml:"cookie_key"`
   Salt string `toml:"salt"`

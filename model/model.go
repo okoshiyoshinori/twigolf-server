@@ -33,6 +33,7 @@ type User struct {
   RealNameKana *string `json:"real_name_kana"`
   Sex *uint `json:"sex"`
   Birthday *time.Time `json:"birthday"`
+  Name string `json:"name"`
   ScreenName string `json:"screen_name"`
   Avatar string `json:"avatar"`
   Description string `json:"description"`
@@ -182,4 +183,9 @@ type UserBasicInfoForm struct {
   RealNameKana *string `json:"real_name_kana" binding:"required"`
   Sex *uint `json:"sex" binding:"required"`
   BirthDay *time.Time `json:"birthday" binding:"required"`
+}
+
+type PostDm struct {
+  Users []string `json:"users"`
+  Message string `json:"message"`
 }

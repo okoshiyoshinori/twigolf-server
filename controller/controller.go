@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,7 +18,7 @@ import (
 )
 
 //test
-var testUser uint = 1
+var testUser uint = 1 
 
 //ログアウト
 func Logout(c *gin.Context) {
@@ -80,7 +81,7 @@ func GetSession(c *gin.Context) {
   id := testUser //sessionから取得
   user := &model.User{}
   d := db.GetConn()
-  if d.Select("id,sns_id,screen_name,real_name,real_name_kana,sex,birthday,avatar,description").Where("id = ?",id).Find(user).RecordNotFound() {
+  if d.Select("id,sns_id,screen_name,name,real_name,real_name_kana,sex,birthday,avatar,description").Where("id = ?",id).Find(user).RecordNotFound() {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当ユーザーは存在しません"})
     return
   }
@@ -90,10 +91,10 @@ func GetSession(c *gin.Context) {
 
 //ユーザー情報
 func GetUser(c *gin.Context) {
-  id := c.Param("snsid")
+  id := c.Param("screen_name")
   user := &model.User{}
   d := db.GetConn()
-  if d.Select("id,sns_id,screen_name,avatar,description").Where("sns_id = ?",id).Find(user).RecordNotFound() {
+  if d.Select("id,sns_id,name,screen_name,avatar,description").Where("screen_name = ?",id).Find(user).RecordNotFound() {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当ユーザーは存在しません"})
     return
   }
@@ -104,7 +105,7 @@ func GetUserCompetitions(c *gin.Context) {
   today := time.Now().Local().Format("2006-01-02 15:04:05")
   p := c.Query("p")
   sort := c.Query("sort")
-  id := c.Param("snsid")
+  id := c.Param("screen_name")
   offset,limit,err := util.LimitNum(p)
   if err != nil {
     c.JSON(http.StatusInternalServerError,gin.H{"cause":"不正なデータです"})
@@ -138,9 +139,9 @@ func GetUserCompetitions(c *gin.Context) {
   } else {
     state = state.Where(wherestr,gorm.Expr("NULL"))
   }
-  state.Where("users.sns_id = ?",id).Model(&model.Competition{}).Count(&num)
-  state.Where("users.sns_id = ?",id).Preload("User",func(db *gorm.DB)*gorm.DB{
-  return db.Select([]string{"id","screen_name","sns_id","avatar","description"})
+  state.Where("users.screen_name = ?",id).Model(&model.Competition{}).Count(&num)
+  state.Where("users.screen_name = ?",id).Preload("User",func(db *gorm.DB)*gorm.DB{
+  return db.Select([]string{"id","screen_name","name","sns_id","avatar","description"})
 }).Preload("Club").Order(sortstr).Limit(limit).Offset(offset).Find(&compe)
   if len(compe) <= 0 {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当のデータはありません"})
@@ -179,7 +180,7 @@ func GetCompetition(c *gin.Context) {
   d := db.GetConn()
   compes := make([]*model.Competition,0,limit)
   state := d.Where(wherestr,today).Order(sortstr).Preload("Club").Preload("User",func(db *gorm.DB) *gorm.DB {
-    return db.Select([]string{"id","screen_name","sns_id","avatar","description"})
+    return db.Select([]string{"id","screen_name","name","sns_id","avatar","description"})
   })
   var count int
   state.Model(&model.Competition{}).Count(&count)
@@ -197,7 +198,7 @@ func GetCompetitonDetail(c *gin.Context) {
   d := db.GetConn()
   compe := model.Competition{}
   if d.Preload("User",func(db *gorm.DB)*gorm.DB{
-    return db.Select([]string{"id","screen_name","sns_id","avatar","description"})
+    return db.Select([]string{"id","screen_name","name","sns_id","avatar","description"})
   }).Preload("Club").Where("id = ?",id).Find(&compe).RecordNotFound() {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当データがありません"})
     return
@@ -212,7 +213,7 @@ func GetComment(c *gin.Context) {
   comments := make([]*model.Comment,0) 
   joinq := d.Joins("left join competitions on competitions.id = comments.competition_id")
   joinq.Where("comments.competition_id = ?",cid).Preload("User",func(db *gorm.DB)*gorm.DB {
-    return db.Select([]string{"id","screen_name","sns_id","avatar","description"})
+    return db.Select([]string{"id","screen_name","name","sns_id","avatar","description"})
   }).Order("update_at desc").Find(&comments)
   if len(comments) <= 0 {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当データがありません"})
@@ -228,7 +229,7 @@ func GetPaticipants(c *gin.Context) {
   participants := make([]*model.Participant,0)
   joinq := d.Joins("left join competitions on competitions.id = participants.competition_id")
   joinq.Where("participants.competition_id = ?",cid).Preload("User",func(db *gorm.DB)*gorm.DB {
-    return db.Select([]string{"id","screen_name","sns_id","avatar"})
+    return db.Select([]string{"id","screen_name","name","sns_id","avatar"})
   }).Find(&participants)
  if len(participants) <= 0 {
    c.JSON(http.StatusNotFound,gin.H{"cause":"参加者がいません"})
@@ -245,7 +246,7 @@ func GetPaticipantsWithRealName(c *gin.Context) {
   participants := make([]*model.Participant,0)
   joinq := d.Joins("left join competitions on competitions.id = participants.competition_id")
   joinq.Where("competitions.id = ?",cid).Where("competitions.user_id = ?",uid).Preload("User",func(db *gorm.DB)*gorm.DB {
-    return db.Select([]string{"id","screen_name","sns_id","avatar","real_name","real_name_kana,sex,birthday"})
+    return db.Select([]string{"id","screen_name","name","sns_id","avatar","real_name","real_name_kana,sex,birthday"})
   }).Find(&participants)
  if len(participants) <= 0 {
    c.JSON(http.StatusNotFound,gin.H{"cause":"参加者がいません"})
@@ -308,13 +309,13 @@ func SearchCompetition(c *gin.Context) {
     state = joinq.Where(status,datestr)
   } else {
     state =joinq.
-           Where("MATCH (competitions.title,competitions.contents,competitions.place_text,competitions.keyword) AGAINST (? IN NATURAL LANGUAGE MODE)",
-           strings.Join(keywords," ")).Or("MATCH (clubs.name,clubs.address) AGAINST (? IN NATURAL LANGUAGE MODE)",strings.Join(keywords," ")).
+           Where("MATCH (competitions.title,competitions.contents,competitions.place_text,competitions.keyword) AGAINST (? IN BOOLEAN MODE)",
+           strings.Join(keywords," ")).Or("MATCH (clubs.name,clubs.address) AGAINST (? IN BOOLEAN MODE)",strings.Join(keywords," ")).
            Where(status,datestr)
   }
   state.Model(&model.Competition{}).Count(&count)
   state.Preload("User",func(db *gorm.DB)*gorm.DB {
-              return db.Select([]string{"id","sns_id","screen_name","avatar"})
+              return db.Select([]string{"id","sns_id","name","screen_name","avatar"})
             }).Order("competitions.event_day asc").Limit(limit).Offset(offset).Find(&compe)
   if count <= 0 {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当データがありません"})
@@ -458,7 +459,7 @@ func PostParticipant(c *gin.Context) {
   }
   var send = make([]*model.Participant,0)
   d.Where("competition_id = ?",participant.CompetitionID).Preload("User",func(db *gorm.DB)*gorm.DB {
-              return db.Select([]string{"id","sns_id","screen_name","avatar"})
+              return db.Select([]string{"id","sns_id","name","screen_name","avatar"})
             }).Find(&send)
   c.JSON(http.StatusOK,gin.H{"payload":send,"cause":"正常に完了しました"})
 }
@@ -514,7 +515,7 @@ func PostComment(c *gin.Context) {
   }
   com := make([]*model.Comment,0)
   d.Where("competition_id = ?",comment.CompetitionID).Preload("User",func(db *gorm.DB)*gorm.DB {
-              return db.Select([]string{"id","sns_id","screen_name","avatar"})
+              return db.Select([]string{"id","sns_id","name","screen_name","avatar"})
             }).Order("update_at desc").Find(&com)
   c.JSON(http.StatusOK,gin.H{"payload":com,"cause":"正常に完了しました"})
 }
@@ -577,7 +578,7 @@ func BundleParticipant(c *gin.Context) {
   }
   pa := make([]*model.Participant,0)
   d.Where("competition_id = ?",form.Transaction[0].CompetitionID).Preload("User",func(db *gorm.DB)*gorm.DB {
-    return db.Select([]string{"id","screen_name","sns_id","avatar"})
+    return db.Select([]string{"id","screen_name","sns_id","name","avatar"})
   }).Find(&pa)
   c.JSON(http.StatusOK,gin.H{"payload":pa,"cause":mes})
 }
@@ -680,4 +681,18 @@ func PostCombination(c *gin.Context) {
  resultdata := make([]*model.Combination,0)
  d.Where("competition_id = ?",cid).Order("start_time asc").Find(&resultdata)
  c.JSON(http.StatusOK,gin.H{"combination_open":compe.CombinationOpen,"payload":resultdata,"cause":"正常に終了しました"})
+}
+
+
+func PostDm(c *gin.Context) {
+  form := model.PostDm{}
+  if err := c.Bind(&form); err != nil {
+    c.JSON(http.StatusBadRequest,gin.H{"cause":"データに不備があります"})
+    logger.Error.Println(err.Error())
+    return
+  }
+  //ここでDM送信--
+  fmt.Println(form)
+  //------------
+  c.JSON(http.StatusOK,gin.H{"cause":"正常に処理が完了しました"})
 }

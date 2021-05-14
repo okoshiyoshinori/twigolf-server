@@ -15,11 +15,7 @@ func GetRouter() *gin.Engine {
   store := cookie.NewStore([]byte(config.GetConfig().Apserver.CookieKey))
   r.Use(sessions.Sessions("twigoluSession",store))
   r.Use(cors.New(cors.Config{
-    AllowOrigins: []string{
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "http://192.168.61.7:3000",
-    },
+    AllowOrigins:config.GetConfig().Apserver.Origin,
     AllowMethods: []string{
         "POST",
         "GET",
@@ -59,18 +55,19 @@ func privateRouter(group *gin.RouterGroup) {
   group.DELETE("/competition/:id",controller.DeleteCompetiton)
   group.GET("/participants_with_name/:cid",controller.GetPaticipantsWithRealName)
   group.GET("/get_combination_excel/:cid",controller.GetCombinationExcel)
+  group.POST("/send_dm",controller.GetCombinationExcel)
 }
 
 func publicRouter(group *gin.RouterGroup) {
   group.GET("/combination/:cid",controller.GetCombination)
-  group.GET("/user/:snsid",controller.GetUser)
+  group.GET("/user/:screen_name",controller.GetUser)
   group.GET("/competition",controller.GetCompetition)
   group.GET("/competition/:id",controller.GetCompetitonDetail)
   group.GET("/comments/:cid",controller.GetComment)
   group.GET("/participants/:cid",controller.GetPaticipants)
   group.GET("/search",controller.SearchCompetition)
   group.GET("/clubs",controller.GetClubs)
-  group.GET("/user_competitions/:snsid",controller.GetUserCompetitions)
+  group.GET("/user_competitions/:screen_name",controller.GetUserCompetitions)
   group.GET("/session",controller.GetSession)
 }
 /*
