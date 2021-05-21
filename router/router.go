@@ -12,8 +12,15 @@ import (
 
 func GetRouter() *gin.Engine {
   r := gin.Default()
+  r.LoadHTMLGlob("templates/*.tmpl")
   store := cookie.NewStore([]byte(config.GetConfig().Apserver.CookieKey))
-  r.Use(sessions.Sessions("twigoluSession",store))
+  store.Options(sessions.Options{
+    Path:"/",
+    Secure:false,
+    HttpOnly: true,
+    MaxAge: 20 * 60 * 60 * 24,
+  })
+  r.Use(sessions.Sessions("twigolfSession",store))
   r.Use(cors.New(cors.Config{
     AllowOrigins:config.GetConfig().Apserver.Origin,
     AllowMethods: []string{
@@ -55,7 +62,7 @@ func privateRouter(group *gin.RouterGroup) {
   group.DELETE("/competition/:id",controller.DeleteCompetiton)
   group.GET("/participants_with_name/:cid",controller.GetPaticipantsWithRealName)
   group.GET("/get_combination_excel/:cid",controller.GetCombinationExcel)
-  group.POST("/send_dm",controller.GetCombinationExcel)
+  group.POST("/send_dm",controller.PostDm)
 }
 
 func publicRouter(group *gin.RouterGroup) {
@@ -69,6 +76,9 @@ func publicRouter(group *gin.RouterGroup) {
   group.GET("/clubs",controller.GetClubs)
   group.GET("/user_competitions/:screen_name",controller.GetUserCompetitions)
   group.GET("/session",controller.GetSession)
+  group.GET("/twitterlogin",controller.GetTwitterAuthUrl)
+  group.GET("/twittercallback",controller.TwitterCallBack)
+  group.GET("/twitter_bot/:cid",controller.SendOgpHtml)
 }
 /*
 func CorsMiddleware() gin.HandlerFunc {
@@ -91,6 +101,11 @@ func CorsMiddleware() gin.HandlerFunc {
 func PrivateMiddleware() gin.HandlerFunc {
   return func(c *gin.Context) {
     //ここに認証関連の処理を追加
+    session := sessions.Default(c)
+    if _,ok := session.Get("user_id").(uint); !ok {
+      c.AbortWithStatus(401)
+      return
+    }
     c.Next()
   }
 }

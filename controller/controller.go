@@ -8,20 +8,29 @@ import (
 	"time"
 
 	"github.com/360EntSecGroup-Skylar/excelize/v2"
+	twicli "github.com/dghubble/go-twitter/twitter"
+	"github.com/garyburd/go-oauth/oauth"
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/gorm"
+	"github.com/okoshiyoshinori/twigolf-server/config"
 	"github.com/okoshiyoshinori/twigolf-server/db"
 	"github.com/okoshiyoshinori/twigolf-server/excel"
 	"github.com/okoshiyoshinori/twigolf-server/logger"
 	"github.com/okoshiyoshinori/twigolf-server/model"
+	"github.com/okoshiyoshinori/twigolf-server/twitter"
 	"github.com/okoshiyoshinori/twigolf-server/util"
 )
 
-//test
-var testUser uint = 1 
-
 //ログアウト
 func Logout(c *gin.Context) {
+  session := sessions.Default(c)
+  fmt.Println("eeee")
+  session.Delete("user_id")
+  if err := session.Save(); err != nil {
+    c.JSON(http.StatusInternalServerError,gin.H{"cause":"予期せぬエラーが発生しました"})
+    return
+  }
   c.JSON(http.StatusOK,gin.H{"cause":"ログアウトしました"})
 }
 
@@ -46,7 +55,7 @@ func GetCombinationExcel(c *gin.Context) {
   }
   //テンプレート読み込み
   const activeSheet string = "Sheet1"
-  f,err := excelize.OpenFile("./template.xlsx")
+  f,err := excelize.OpenFile("./templates/template.xlsx")
   if err != nil {
     c.JSON(http.StatusInternalServerError,gin.H{"cause":"予期せぬエラーが発生しました"})
     return
@@ -78,10 +87,11 @@ func GetClubs(c *gin.Context) {
 }
 
 func GetSession(c *gin.Context) {
-  id := testUser //sessionから取得
+  session := sessions.Default(c)
+  id :=  session.Get("user_id") //sessionから取得
   user := &model.User{}
   d := db.GetConn()
-  if d.Select("id,sns_id,screen_name,name,real_name,real_name_kana,sex,birthday,avatar,description").Where("id = ?",id).Find(user).RecordNotFound() {
+  if d.Select("id,screen_name,name,real_name,real_name_kana,sex,birthday,avatar,description").Where("id = ?",id).Find(user).RecordNotFound() {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当ユーザーは存在しません"})
     return
   }
@@ -94,7 +104,7 @@ func GetUser(c *gin.Context) {
   id := c.Param("screen_name")
   user := &model.User{}
   d := db.GetConn()
-  if d.Select("id,sns_id,name,screen_name,avatar,description").Where("screen_name = ?",id).Find(user).RecordNotFound() {
+  if d.Select("id,name,screen_name,avatar,description").Where("screen_name = ?",id).Find(user).RecordNotFound() {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当ユーザーは存在しません"})
     return
   }
@@ -111,38 +121,44 @@ func GetUserCompetitions(c *gin.Context) {
     c.JSON(http.StatusInternalServerError,gin.H{"cause":"不正なデータです"})
     return
   }
-  if (sort != "1") && (sort !="2") && (sort != "3") {
+  if (sort != "1") && (sort !="2") && (sort != "3") && (sort != "4") {
     c.JSON(http.StatusInternalServerError,gin.H{"cause":"不正なデータです"})
     return
   }
   var sortstr string
   var wherestr string
   if sort == "1" {
-    sortstr = "event_day asc"
-    wherestr = "event_day >= ?"
+    sortstr = "competitions.event_day asc"
+    wherestr = "competitions.event_day >= ?"
   } else if sort == "2" {
-    sortstr = "event_day desc"
-    wherestr = "event_day < ?"
+    sortstr = "competitions.event_day desc"
+    wherestr = "competitions.event_day < ?"
   } else if sort == "3" {
-    sortstr = "update_at asc"
-    wherestr = "event_day IS ?"
+    sortstr = "competitions.update_at asc"
+    wherestr = "competitions.event_day IS ?"
+  } else if sort == "4" {
+    sortstr = "competitions.update_at desc"
   }
   d := db.GetConn()
   var state *gorm.DB
   compe := make([]model.Competition,0,limit)
   var num uint
 
-  state = d.Joins("left join participants on competitions.id = participants.competition_id left join users on users.id = participants.user_id")
+  if sort != "4" {
+    state = d.Joins("left join participants on competitions.id = participants.competition_id left join users on users.id = participants.user_id")
+  } else {
+    state = d.Joins("left join users on competitions.user_id = users.id")
+  }
 
   if sort == "1" || sort == "2" {
     state = state.Where(wherestr,today)
-  } else {
+  } else if sort == "3" {
     state = state.Where(wherestr,gorm.Expr("NULL"))
-  }
+  } 
   state.Where("users.screen_name = ?",id).Model(&model.Competition{}).Count(&num)
   state.Where("users.screen_name = ?",id).Preload("User",func(db *gorm.DB)*gorm.DB{
-  return db.Select([]string{"id","screen_name","name","sns_id","avatar","description"})
-}).Preload("Club").Order(sortstr).Limit(limit).Offset(offset).Find(&compe)
+   return db.Select([]string{"id","screen_name","name","avatar","description"})
+  }).Preload("Club").Order(sortstr).Limit(limit).Offset(offset).Find(&compe)
   if len(compe) <= 0 {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当のデータはありません"})
     return
@@ -180,7 +196,7 @@ func GetCompetition(c *gin.Context) {
   d := db.GetConn()
   compes := make([]*model.Competition,0,limit)
   state := d.Where(wherestr,today).Order(sortstr).Preload("Club").Preload("User",func(db *gorm.DB) *gorm.DB {
-    return db.Select([]string{"id","screen_name","name","sns_id","avatar","description"})
+    return db.Select([]string{"id","screen_name","name","avatar","description"})
   })
   var count int
   state.Model(&model.Competition{}).Count(&count)
@@ -198,7 +214,7 @@ func GetCompetitonDetail(c *gin.Context) {
   d := db.GetConn()
   compe := model.Competition{}
   if d.Preload("User",func(db *gorm.DB)*gorm.DB{
-    return db.Select([]string{"id","screen_name","name","sns_id","avatar","description"})
+    return db.Select([]string{"id","screen_name","name","avatar","description"})
   }).Preload("Club").Where("id = ?",id).Find(&compe).RecordNotFound() {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当データがありません"})
     return
@@ -213,7 +229,7 @@ func GetComment(c *gin.Context) {
   comments := make([]*model.Comment,0) 
   joinq := d.Joins("left join competitions on competitions.id = comments.competition_id")
   joinq.Where("comments.competition_id = ?",cid).Preload("User",func(db *gorm.DB)*gorm.DB {
-    return db.Select([]string{"id","screen_name","name","sns_id","avatar","description"})
+    return db.Select([]string{"id","screen_name","name","avatar","description"})
   }).Order("update_at desc").Find(&comments)
   if len(comments) <= 0 {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当データがありません"})
@@ -229,7 +245,7 @@ func GetPaticipants(c *gin.Context) {
   participants := make([]*model.Participant,0)
   joinq := d.Joins("left join competitions on competitions.id = participants.competition_id")
   joinq.Where("participants.competition_id = ?",cid).Preload("User",func(db *gorm.DB)*gorm.DB {
-    return db.Select([]string{"id","screen_name","name","sns_id","avatar"})
+    return db.Select([]string{"id","screen_name","name","avatar"})
   }).Find(&participants)
  if len(participants) <= 0 {
    c.JSON(http.StatusNotFound,gin.H{"cause":"参加者がいません"})
@@ -240,13 +256,14 @@ func GetPaticipants(c *gin.Context) {
 
 func GetPaticipantsWithRealName(c *gin.Context) {
   //test
-  uid := testUser
+  session := sessions.Default(c)
+  uid := session.Get("user_id") 
   cid := c.Param("cid")
   d := db.GetConn()
   participants := make([]*model.Participant,0)
   joinq := d.Joins("left join competitions on competitions.id = participants.competition_id")
   joinq.Where("competitions.id = ?",cid).Where("competitions.user_id = ?",uid).Preload("User",func(db *gorm.DB)*gorm.DB {
-    return db.Select([]string{"id","screen_name","name","sns_id","avatar","real_name","real_name_kana,sex,birthday"})
+    return db.Select([]string{"id","screen_name","name","avatar","real_name","real_name_kana,sex,birthday"})
   }).Find(&participants)
  if len(participants) <= 0 {
    c.JSON(http.StatusNotFound,gin.H{"cause":"参加者がいません"})
@@ -315,7 +332,7 @@ func SearchCompetition(c *gin.Context) {
   }
   state.Model(&model.Competition{}).Count(&count)
   state.Preload("User",func(db *gorm.DB)*gorm.DB {
-              return db.Select([]string{"id","sns_id","name","screen_name","avatar"})
+              return db.Select([]string{"id","name","screen_name","avatar"})
             }).Order("competitions.event_day asc").Limit(limit).Offset(offset).Find(&compe)
   if count <= 0 {
     c.JSON(http.StatusNotFound,gin.H{"cause":"該当データがありません"})
@@ -354,7 +371,8 @@ func PostUserBasicInfo(c *gin.Context) {
 //create competitions
 func PostCompetiton(c *gin.Context) {
   //test
-  uid := testUser
+  session := sessions.Default(c)
+  uid := session.Get("user_id") 
   form := model.CompetitionForm{}
   if err := c.Bind(&form); err != nil {
     c.JSON(http.StatusBadRequest,gin.H{"cause":"データに不備があります"})
@@ -406,6 +424,34 @@ func PostCompetiton(c *gin.Context) {
       c.JSON(http.StatusInternalServerError,gin.H{"cause":result.Error.Error()})
       return
     }
+  }
+  if form.Twitter {
+    url := fmt.Sprintf("%s/events/%d",config.GetConfig().Apserver.Host,compe.ID)
+    title := compe.Title
+    eventDay := "未定"
+    if compe.EventDay != nil {
+      eventDay = util.DateToString(compe.EventDay)
+    }
+    d := db.GetConn()
+    user := model.User{}
+   //ユーザーツイート
+   if !d.Where("id = ?",uid).Find(&user).RecordNotFound() {
+     token := twitter.Token{
+       AccessToken: user.Token,
+       AccessSecretToken: user.Secret,
+     }
+     client := twitter.NewClient(token)
+     tweet := fmt.Sprintf("[twigolf]\n%s\n%s\n%s",eventDay,title,url) 
+     client.Statuses.Update(tweet,nil)
+   }
+   //公式ツイート
+   token := twitter.Token{
+     AccessToken: config.GetConfig().Apserver.TwitterToken,
+     AccessSecretToken:config.GetConfig().Apserver.TwitterSecret,
+   }
+   client := twitter.NewClient(token)
+   tweet := fmt.Sprintf("%s\n%s\n%s",eventDay,title,url) 
+   client.Statuses.Update(tweet,nil)
   }
   c.JSON(http.StatusOK,gin.H{"cause":"正常に終了しました"})
 }
@@ -459,7 +505,7 @@ func PostParticipant(c *gin.Context) {
   }
   var send = make([]*model.Participant,0)
   d.Where("competition_id = ?",participant.CompetitionID).Preload("User",func(db *gorm.DB)*gorm.DB {
-              return db.Select([]string{"id","sns_id","name","screen_name","avatar"})
+              return db.Select([]string{"id","name","screen_name","avatar"})
             }).Find(&send)
   c.JSON(http.StatusOK,gin.H{"payload":send,"cause":"正常に完了しました"})
 }
@@ -467,7 +513,8 @@ func PostParticipant(c *gin.Context) {
 //delete competition
 func DeleteCompetiton(c *gin.Context) {
   //test
-  uid := testUser
+  session := sessions.Default(c)
+  uid := session.Get("user_id") 
   idstr := c.Param("id")
   u_id,err := strconv.ParseUint(idstr,10,32 << (^uint(0) >> 63)) 
   if err != nil {
@@ -476,7 +523,7 @@ func DeleteCompetiton(c *gin.Context) {
   }
   comp := model.Competition {
     ID:uint(u_id),
-    UserID:uid,
+    UserID:uid.(uint),
   }
   d := db.GetConn()
   if d.Where("id = ?",u_id).Where("user_id = ?",uid).Find(&model.Competition{}).RecordNotFound() {
@@ -515,7 +562,7 @@ func PostComment(c *gin.Context) {
   }
   com := make([]*model.Comment,0)
   d.Where("competition_id = ?",comment.CompetitionID).Preload("User",func(db *gorm.DB)*gorm.DB {
-              return db.Select([]string{"id","sns_id","name","screen_name","avatar"})
+              return db.Select([]string{"id","name","screen_name","avatar"})
             }).Order("update_at desc").Find(&com)
   c.JSON(http.StatusOK,gin.H{"payload":com,"cause":"正常に完了しました"})
 }
@@ -578,7 +625,7 @@ func BundleParticipant(c *gin.Context) {
   }
   pa := make([]*model.Participant,0)
   d.Where("competition_id = ?",form.Transaction[0].CompetitionID).Preload("User",func(db *gorm.DB)*gorm.DB {
-    return db.Select([]string{"id","screen_name","sns_id","name","avatar"})
+    return db.Select([]string{"id","screen_name","name","avatar"})
   }).Find(&pa)
   c.JSON(http.StatusOK,gin.H{"payload":pa,"cause":mes})
 }
@@ -586,7 +633,8 @@ func BundleParticipant(c *gin.Context) {
 //post combination
 func PostCombination(c *gin.Context) {
   //test
-  uid := testUser
+  session := sessions.Default(c)
+  uid := session.Get("user_id") 
   cid := c.Param("cid")
   d := db.GetConn()
   //check
@@ -686,13 +734,156 @@ func PostCombination(c *gin.Context) {
 
 func PostDm(c *gin.Context) {
   form := model.PostDm{}
+  var sendErr []string 
+  uid := sessions.Default(c).Get("user_id")
   if err := c.Bind(&form); err != nil {
     c.JSON(http.StatusBadRequest,gin.H{"cause":"データに不備があります"})
     logger.Error.Println(err.Error())
     return
   }
-  //ここでDM送信--
-  fmt.Println(form)
-  //------------
+  d := db.GetConn()
+  user := model.User{}
+  d.Where("id = ?",uid).Find(&user)
+  token := twitter.Token{
+    AccessToken:user.Token,
+    AccessSecretToken:user.Secret,
+  }
+  client := twitter.NewClient(token)
+  for _,v := range form.Users {
+    info,_,err1 := client.Users.Show(&twicli.UserShowParams{
+    ScreenName: v,
+    })
+    if err1 != nil {
+      sendErr = append(sendErr,v + "への送信に失敗しました [原因] " + err1.Error())
+      continue
+    }
+    _,_,err2 := client.DirectMessages.EventsNew(twitter.NewDmEvent(info.IDStr,form.Message))
+    if err2 != nil {
+      sendErr = append(sendErr, v + "への送信に失敗しました [原因] " + err2.Error())
+    }
+  }
+  if len(sendErr) > 0 {
+    var temp string = ""
+    for _,v := range sendErr {
+      temp += v + "\n"
+    }
+    c.JSON(http.StatusInternalServerError,gin.H{"cause":temp})
+    return
+  }
   c.JSON(http.StatusOK,gin.H{"cause":"正常に処理が完了しました"})
+}
+
+func GetTwitterAuthUrl(c *gin.Context) {
+  session := sessions.Default(c)
+  client := twitter.GetConnect()
+  rt,err := client.RequestTemporaryCredentials(nil,config.GetConfig().Apserver.TwitterCallBackUrl,nil)
+  if err != nil {
+    c.JSON(http.StatusBadRequest,gin.H{"cause":err.Error()})
+    return
+  }
+  session.Set("request_token",rt.Token)
+  session.Set("request_token_secret",rt.Secret)
+  if err := session.Save(); err != nil {
+    c.JSON(http.StatusInternalServerError,gin.H{"cause":"予期せぬエラーが発生しました"})
+    logger.Error.Println(err.Error())
+    return
+  }
+  url := client.AuthorizationURL(rt,nil)
+  c.JSON(http.StatusOK,url)
+}
+
+func TwitterCallBack(c *gin.Context) {
+  session := sessions.Default(c)
+  rq := model.TwitterCallBackReq{}
+  rq.Token = c.Query("oauth_token")
+  rq.Verifier = c.Query("oauth_verifier")
+  rt := session.Get("request_token")
+  rts := session.Get("request_token_secret")
+  at,err := twitter.GetAccessToken(
+                &oauth.Credentials{
+                  Token:rt.(string),
+                  Secret:rts.(string),
+                 },
+                 rq.Verifier,
+               )
+  if err != nil {
+    c.JSON(http.StatusInternalServerError,gin.H{"cause":err.Error()})
+    return
+  }
+  account := model.TwitterAccount{}
+  if err := twitter.GetAccount(at,&account); err != nil {
+    c.JSON(http.StatusInternalServerError,gin.H{"cause":err.Error()})
+    return
+  }
+
+  //DB
+  d := db.GetConn()
+  user := model.User{}
+  if d.Where("sns_id = ?",account.ID).Find(&user).RecordNotFound() {
+    //insert table
+    user.SnsId = account.ID
+    user.ScreenName = account.ScreenName
+    user.Name = account.Name
+    user.Avatar = account.Avatar
+    user.Description = account.Description
+    user.LoginType = "TWITTER"
+    user.Token = at.Token
+    user.Secret = at.Secret
+    user.UpdateAt = time.Now()
+    result := d.Create(&user)
+    if result.Error != nil {
+      c.JSON(http.StatusInternalServerError,gin.H{"cause":"予期せぬエラーが発生しました"})
+      return
+    }
+  } else {
+    user.SnsId = account.ID
+    user.ScreenName = account.ScreenName
+    user.Name = account.Name
+    user.Avatar = account.Avatar
+    user.Description = account.Description
+    user.Token = at.Token
+    user.Secret = at.Secret
+    user.UpdateAt = time.Now()
+    result := d.Save(&user)
+    if result.Error != nil {
+      c.JSON(http.StatusInternalServerError,gin.H{"cause":"予期せぬエラーが発生しました"})
+      return
+    }
+  }
+  result := model.User{}
+  d.Where("screen_name = ?",account.ScreenName).Select("id").Find(&result)
+  session.Set("user_id",result.ID)
+  if err := session.Save(); err != nil {
+    c.JSON(http.StatusInternalServerError,gin.H{"cause":"予期せぬエラーが発生しました"})
+    return
+  }
+  to := config.GetConfig().Apserver.RedirectUrl + "/" + account.ScreenName
+  c.Redirect(http.StatusPermanentRedirect,to)
+}
+
+func SendOgpHtml(c *gin.Context) {
+  cidstr := c.Param("cid")
+  cid,err := strconv.Atoi(cidstr) 
+  if err != nil {
+    c.AbortWithStatus(500)
+    return
+  }
+  ogp := twitter.MakeOgpInfo(cid)
+  if ogp == nil  {
+    c.AbortWithStatus(500)
+    return
+  }
+
+  c.HTML(http.StatusOK,"index.tmpl",gin.H{
+    "title": ogp.OgTitle,
+    "description": ogp.OgDescription,
+    "og_title": ogp.OgTitle,
+    "og_description": ogp.OgDescription,
+    "og_type": ogp.OgType,
+    "og_url": ogp.OgUrl,
+    "og_image": ogp.OgImage,
+    "twitter_card": ogp.Twitter.Card,
+    "twitter_site": ogp.Twitter.Site,
+    "twitter_creater": ogp.Twitter.Creater,
+  })
 }

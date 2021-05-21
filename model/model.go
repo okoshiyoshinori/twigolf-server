@@ -155,7 +155,7 @@ type CompetitionForm struct {
   EventDay *time.Time `json:"event_day"`
   EventDeadline *time.Time `json:"event_deadline"`
   Keyword *string `json:"keyword"`
-  twitter bool `json:"twitter"`
+  Twitter bool `json:"twitter"`
 }
 
 //form participants
@@ -188,4 +188,33 @@ type UserBasicInfoForm struct {
 type PostDm struct {
   Users []string `json:"users"`
   Message string `json:"message"`
+}
+
+type TwitterAccount struct {
+  ID string `json:"id_str"`
+  ScreenName string `json:"screen_name"`
+  Name string `json:"name"`
+  Avatar string `json:"profile_image_url_https"`
+  Description string `json:"description"`
+}
+
+type TwitterCallBackReq struct {
+  Token    string `json:"oauth_token"`
+	Verifier string `json:"oauth_verifier"`
+}
+
+type TwitterCard struct {
+  Card string //card type summary or summary_large_image
+  Site string //@twitter_user_name
+  Creater string
+}
+
+type Ogp struct {
+  OgTitle string
+  OgType string
+  OgUrl string
+  OgImage string
+  OgSiteName string
+  OgDescription string
+  Twitter *TwitterCard 
 }

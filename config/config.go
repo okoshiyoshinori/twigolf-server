@@ -20,11 +20,25 @@ type dbConfig struct {
 }
 
 type apConfig struct {
+  Host string `toml:"host"`
+  TwitterAccount string `toml:"twitter_account"`
+  TwitterToken string `toml:"twitter_token"`
+  TwitterSecret string `toml:"twitter_secret"`
+  SiteName string `toml:"site_name"`
+  Image string `toml:"image"`
   NumPerPage int `toml:"numperpage"`
   Origin []string `toml:"origin"`
   Port string `toml:"port"`
   CookieKey string `toml:"cookie_key"`
   Salt string `toml:"salt"`
+  CsKey string `toml:"cs_key"`
+  CsSecretKey string `toml:"cs_secret_key"`
+  TwitterCallBackUrl string `toml:"twitter_callback_url"`
+  TwitterTempCredentialRequestURI string `toml:"twitter_temporary_credential_requestURI"`
+  TwitterResourceOwnerAuthorizationURI string `toml:"twitter_resource_owner_authorizationURI"`
+  TwitterTokenRequestURI string `toml:"twitter_token_requestURI"`
+  TwitterVerifyCredentialsURI string `toml:"twitter_verify_credentialsURI"`
+  RedirectUrl string `toml:"redirect_url"`
 }
 
 var systemConfig *conf = readConfig() 
